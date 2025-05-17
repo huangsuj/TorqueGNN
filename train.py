@@ -105,10 +105,10 @@ def construct_agu_adj(feature, data_edge_index, device, args):
 
     return adj_sparse
 
-def train_start(feature, A_without_self_loop, adj_ori, train_mask, valid_mask, args, labels, best_valid_acc, model, optimizer, best_model, candidates):
+def train_start(feature, adj_ori, train_mask, valid_mask, args, labels, best_valid_acc, model, optimizer, best_model, candidates):
         loss_function1 = torch.nn.NLLLoss()
         model.train()
-        output = model(feature, A_without_self_loop, adj_ori, candidates)
+        output = model(feature, adj_ori, candidates)
         output_softmax = F.log_softmax(output, dim=1)
         if args.dataset in ['questions', 'Tolokers']:
             Loss = F.binary_cross_entropy_with_logits(output[train_mask], F.one_hot(labels, num_classes=2).float()[train_mask])
@@ -133,7 +133,7 @@ def train_start(feature, A_without_self_loop, adj_ori, train_mask, valid_mask, a
 
         with torch.no_grad():
             model.eval()
-            output_ = model(feature, A_without_self_loop, adj_ori, candidates)
+            output_ = model(feature, adj_ori, candidates)
             if args.dataset in ['questions', 'Tolokers']:
                 from sklearn.metrics import roc_auc_score
                 pred_labels = F.softmax(output_)[valid_mask].squeeze()
@@ -168,21 +168,21 @@ def train(args):
 
     best_valid_acc = 0
     candidates = get_topk_candidates(feature, A_without_self_loop, k=args.add_edge)
-    test_model = Model(args, args.device, feature.shape[1], args.hdim, 1, num_classes, args.dropout,
+    test_model = Model(args, args.device, feature.shape[1], args.hdim, num_classes, args.dropout,
                        feature.shape[0]).to(args.device)
     best_model = copy.deepcopy(test_model)
     optimizer = torch.optim.Adam(test_model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
-    with tqdm(total=args.num_epoch, desc="Pre_Training") as pbar:
+    with tqdm(total=args.num_epoch, desc="Training") as pbar:
         for epoch in range(args.num_epoch):
             loss, Valid_ACC, Train_ACC, best_model, best_valid_acc = \
-                train_start(feature, A_without_self_loop, adj_ori, train_mask, valid_mask, args, labels, best_valid_acc, test_model, optimizer,
+                train_start(feature, adj_ori, train_mask, valid_mask, args, labels, best_valid_acc, test_model, optimizer,
                             best_model, candidates)
             if args.is_energy:
                 for k in range(args.energy_epochs):
                     test_model.adjust_bn_layers(feature, test_model, args, agu_adj_sparse_list)
                 loss, Valid_ACC, Train_ACC, best_model, best_valid_acc = \
-                    train_start(feature, A_without_self_loop, adj_ori, train_mask, valid_mask, args, labels, best_valid_acc,
+                    train_start(feature, adj_ori, train_mask, valid_mask, args, labels, best_valid_acc,
                                 test_model, optimizer, best_model, candidates)
 
             pbar.set_postfix({
@@ -193,7 +193,7 @@ def train(args):
             pbar.update(1)
         with torch.no_grad():
             best_model.eval()
-            output = best_model(feature, A_without_self_loop, adj_ori, candidates)
+            output = best_model(feature, adj_ori, candidates)
             print("Evaluating the model")
             if args.dataset in ['questions', 'Tolokers']:
                 from sklearn.metrics import roc_auc_score
@@ -227,8 +227,8 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    Graph_dataset = ['Wisconsin']
-    args.path_graph = '/gpu-data/hsj/GCN_dataset/'
+    Graph_dataset = ['Penn94']
+    args.path_graph = './data/'
     for index, item in enumerate(Graph_dataset):
         args.dataset = item
         print('--------------Graph Datasets: {}--------------------'.format(args.dataset))
@@ -237,31 +237,25 @@ if __name__ == '__main__':
         config_path = './config_demo' + '.ini'
         conf.read(config_path, encoding='utf-8')
         args.num_epoch = int(conf.getfloat(args.dataset, 'epoch'))
-        args.seed = int(conf.getfloat(args.dataset, 'seed'))
         args.hdim = int(conf.getfloat(args.dataset, 'hdim'))
         args.lr = conf.getfloat(args.dataset, 'lr')
         args.layers = conf.getfloat(args.dataset, 'layers')
+        args.alpha = conf.getfloat(args.dataset, 'alpha')
         args.weight_decay = conf.getfloat(args.dataset, 'weight_decay')
         args.dropout = conf.getfloat(args.dataset, 'dropout')
         args.add_edge = int(conf.getfloat(args.dataset, 'add_edge'))
         args.valid_ratio = conf.getfloat(args.dataset, 'valid_ratio')
-        ratio_ = conf.get(args.dataset, 'train_ratio').split(',')
-        ratio_list = [float(item.strip()) for item in ratio_]
         edge_ = conf.get(args.dataset, 'add_edge').split(',')
         edge_list = [int(item.strip()) for item in edge_]
-        args.is_energy = 1
 
 
-        for r in range(len(edge_list)):
-            args.train_ratio = ratio_list[0]
-            args.add_edge = edge_list[r]
-            args.device = 'cuda:0'
-            tab_printer(args)
-            all_ACC = []
-            for n_num in range(args.n_repeated):
+        args.device = 'cuda:0'
+        tab_printer(args)
+        all_ACC = []
+        for n_num in range(args.n_repeated):
 
-                loss, ACC = train(args)
-                all_ACC.append(ACC)
-                print("-----------------------")
-                print("ACC: {:.2f} ({:.2f})".format(np.mean(all_ACC) * 100, np.std(all_ACC) * 100))
-                print("-----------------------")
+            loss, ACC = train(args)
+            all_ACC.append(ACC)
+            print("-----------------------")
+            print("ACC: {:.2f} ({:.2f})".format(np.mean(all_ACC) * 100, np.std(all_ACC) * 100))
+            print("-----------------------")
