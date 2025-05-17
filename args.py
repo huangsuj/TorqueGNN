@@ -20,7 +20,6 @@ def parameter_parser():
     parser.add_argument("--num_epoch", type=int, default=100, help="Number of training epochs. Default is 100.")
     parser.add_argument("--inner_epochs", type=int, default=1, help="epochs for training")
 
-    parser.add_argument("--data-split-mode", type=str, default="Ratio", help="Data split mode: Number or Ratio")
     parser.add_argument("--train_ratio", type=int, default=0.48, help="Train data ratio. Default is 0.48.")
     parser.add_argument("--valid_ratio", type=int, default=0.32, help="Valid data ratio. Default is 0.32.")
 
